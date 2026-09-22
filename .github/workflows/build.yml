@@ -10,14 +10,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    - name: Unzip project file
+    - name: Find and Extract ZIP File
       run: |
-        unzip bus1-background-gps-*.zip -d extracted_project
-        cp -r extracted_project/*/* . || true
+        ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+        if [ -n "$ZIP_FILE" ]; then
+          echo "Found ZIP file: $ZIP_FILE"
+          unzip -o "$ZIP_FILE" -d ./temp_extracted
+          # Move files to root directory
+          if [ -d "./temp_extracted/BUS1_Android_Background_Ready 2" ]; then
+            cp -rn "./temp_extracted/BUS1_Android_Background_Ready 2"/* ./
+          else
+            cp -rn ./temp_extracted/*/* ./ || cp -rn ./temp_extracted/* ./
+          fi
+          rm -rf ./temp_extracted
+        fi
 
-    - name: set up JDK 17
+    - name: Set up JDK 17
       uses: actions/setup-java@v3
       with:
         java-version: '17'
@@ -25,12 +36,12 @@ jobs:
         cache: gradle
 
     - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      run: chmod +x gradlew || true
 
     - name: Build with Gradle
       run: ./gradlew assembleDebug
 
-    - name: Upload APK
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v3
       with:
         name: app-debug
