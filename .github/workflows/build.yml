@@ -10,23 +10,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout Repository
       uses: actions/checkout@v3
 
-    - name: Find and Extract ZIP File
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Extract ZIP File using Python
       run: |
-        ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
-        if [ -n "$ZIP_FILE" ]; then
-          echo "Found ZIP file: $ZIP_FILE"
-          unzip -o "$ZIP_FILE" -d ./temp_extracted
-          # Move files to root directory
-          if [ -d "./temp_extracted/BUS1_Android_Background_Ready 2" ]; then
-            cp -rn "./temp_extracted/BUS1_Android_Background_Ready 2"/* ./
-          else
-            cp -rn ./temp_extracted/*/* ./ || cp -rn ./temp_extracted/* ./
-          fi
-          rm -rf ./temp_extracted
-        fi
+        python3 -c "
+        import zipfile, os, glob, shutil
+
+        zip_files = glob.glob('*.zip')
+        if zip_files:
+            zip_path = zip_files[0]
+            print(f'Extracting {zip_path}...')
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall('extracted')
+            
+            # Move contents to root
+            for root, dirs, files in os.walk('extracted'):
+                if 'build.gradle.kts' in files or 'settings.gradle.kts' in files or 'app' in dirs:
+                    for item in os.listdir(root):
+                        s = os.path.join(root, item)
+                        d = os.path.join('.', item)
+                        if os.path.isdir(s):
+                            if os.path.exists(d):
+                                shutil.rmtree(d)
+                            shutil.move(s, d)
+                        else:
+                            shutil.move(s, d)
+                    break
+        "
 
     - name: Set up JDK 17
       uses: actions/setup-java@v3
