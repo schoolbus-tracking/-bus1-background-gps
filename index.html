@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>تتبع الباصات المدرسية - ولي الأمر</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+*{box-sizing:border-box}
+
+html,body{
+  margin:0;
+  padding:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  font-family:Arial,Tahoma,sans-serif;
+  background:#f4f6f8;
+  color:#222;
+}
+
+header{
+  height:58px;
+  background:#1976d2;
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding:8px;
+  font-size:21px;
+  font-weight:bold;
+  position:relative;
+  z-index:3000;
+  box-shadow:0 2px 7px rgba(0,0,0,.25);
+}
+
+#status{
+  position:absolute;
+  top:66px;
+  right:10px;
+  left:10px;
+  z-index:2500;
+  background:rgba(255,255,255,.95);
+  padding:7px 10px;
+  border-radius:10px;
+  text-align:center;
+  font-size:14px;
+  line-height:1.5;
+  box-shadow:0 2px 7px rgba(0,0,0,.18);
+}
+
+#map{
+  position:absolute;
+  top:58px;
+  right:0;
+  bottom:0;
+  left:0;
+  z-index:1;
+}
+
+/* الاسم والمدرسة ثابتان فوق الخريطة */
+.footer{
+  position:fixed;
+  right:10px;
+  left:10px;
+  bottom:10px;
+  z-index:5000;
+  background:rgba(255,255,255,.96);
+  color:#222;
+  padding:9px 12px;
+  border-radius:12px;
+  text-align:center;
+  font-size:14px;
+  font-weight:bold;
+  line-height:1.8;
+  box-shadow:0 2px 9px rgba(0,0,0,.28);
+  border:1px solid rgba(0,0,0,.1);
+  pointer-events:none;
+}
+
+.bus-icon{
+  background:#fff;
+  border:3px solid #1976d2;
+  border-radius:50%;
+  width:42px;
+  height:42px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:23px;
+  box-shadow:0 2px 7px rgba(0,0,0,.4);
+}
+
+.bus2-icon{
+  border-color:#e65100;
+}
+
+.bus-popup{
+  font-size:16px;
+  font-weight:bold;
+  text-align:center;
+  line-height:1.5;
+}
+
+.landmark-icon{
+  background:#d32f2f;
+  width:27px;
+  height:27px;
+  border-radius:50% 50% 50% 0;
+  transform:rotate(-45deg);
+  border:3px solid #fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.4);
+  position:relative;
+}
+
+.landmark-icon::after{
+  content:"";
+  position:absolute;
+  width:7px;
+  height:7px;
+  background:#fff;
+  border-radius:50%;
+  top:6px;
+  left:6px;
+}
+
+.landmark-popup{
+  font-size:15px;
+  font-weight:bold;
+  text-align:center;
+  line-height:1.5;
+}
+
+.leaflet-control-attribution{
+  font-size:9px;
+}
+
+@media(max-width:600px){
+  header{font-size:19px}
+  .footer{font-size:13px}
+}
+</style>
+</head>
+
+<body>
+
+<header>🚌 تتبع الباصات المدرسية</header>
+
+<div id="status">جاري الاتصال بقاعدة البيانات...</div>
+
+<div id="map"></div>
+
+<div class="footer">
+  إعداد وتصميم : ذكريات حسين الزوايده<br>
+  مدرسة الديسة الثانوية للبنات
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+/*
+  Supabase
+  يتم استخدام Publishable Key في المتصفح للقراءة فقط.
+  لا يتم وضع أي Secret/Service Role Key هنا.
+*/
+const SUPABASE_URL = "https://cfzqkgrzhepaxhsmqfdk.supabase.co";
+const SUPABASE_KEY = "sb_publishable_rZYDPp6tTYc61BndkESM0Q_PZ9jglB4";
+
+const TABLE_URL =
+  SUPABASE_URL +
+  "/rest/v1/buses2026?select=bus,lat,lng,timestamp&order=bus.asc";
+
+const headers = {
+  "apikey": SUPABASE_KEY,
+  "Authorization": "Bearer " + SUPABASE_KEY,
+  "Accept": "application/json"
+};
+
+/* الخريطة الواقعية */
+const map = L.map("map", {
+  zoomControl:true,
+  preferCanvas:true
+}).setView([29.6535,35.5060],14);
+
+/* صور الأقمار الصناعية */
+L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  {
+    maxZoom:19,
+    attribution:"Tiles &copy; Esri"
+  }
+).addTo(map);
+
+/* أسماء الأماكن والحدود فوق صور الأقمار */
+L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+  {
+    maxZoom:19,
+    opacity:.9,
+    attribution:"Esri"
+  }
+).addTo(map);
+
+/* أيقونات الباصات */
+const bus1Icon = L.divIcon({
+  className:"",
+  html:'<div class="bus-icon">🚌</div>',
+  iconSize:[42,42],
+  iconAnchor:[21,21],
+  popupAnchor:[0,-22]
+});
+
+const bus2Icon = L.divIcon({
+  className:"",
+  html:'<div class="bus-icon bus2-icon">🚌</div>',
+  iconSize:[42,42],
+  iconAnchor:[21,21],
+  popupAnchor:[0,-22]
+});
+
+/* أيقونة المعالم */
+const landmarkIcon = L.divIcon({
+  className:"",
+  html:'<div class="landmark-icon"></div>',
+  iconSize:[27,27],
+  iconAnchor:[13,27],
+  popupAnchor:[0,-27]
+});
+
+/* المعالم */
+const landmarks = [
+  {lat:29.6561150,lng:35.5022070,name:"مدرسة الديسة الثانوية للبنات"},
+  {lat:29.6569637,lng:35.5023991,name:"مركز صحي الديسة"},
+  {lat:29.6549781,lng:35.5066920,name:"صيدلية الديسة"},
+  {lat:29.6535199,lng:35.5094617,name:"المؤسسة الاستهلاكية العسكرية"},
+  {lat:29.6528083,lng:35.5100062,name:"أسواق الصقر"},
+  {lat:29.6531903,lng:35.5117446,name:"مدرسة الديسة الأساسية المختلطة"},
+  {lat:29.6498958,lng:35.5136832,name:"الوحدات"},
+  {lat:29.6480062,lng:35.5182352,name:"نادي قرى حوض الديسة"}
+];
+
+landmarks.forEach(place=>{
+  L.marker([place.lat,place.lng],{icon:landmarkIcon})
+    .addTo(map)
+    .bindPopup('<div class="landmark-popup">'+place.name+"</div>");
+});
+
+/* علامات الباص */
+let bus1Marker = null;
+let bus2Marker = null;
+
+/* التحقق من الإحداثيات */
+function validPosition(data){
+  if(!data) return false;
+
+  const lat = Number(data.lat);
+  const lng = Number(data.lng);
+
+  return Number.isFinite(lat) &&
+         Number.isFinite(lng) &&
+         lat >= -90 && lat <= 90 &&
+         lng >= -180 && lng <= 180;
+}
+
+/*
+  حالة البث الحي:
+  الباص يعتبر متصلاً إذا وصل آخر timestamp خلال آخر 10 ثوانٍ تقريباً.
+  لا نهتم بتغير lat/lng؛ فالباص يمكن أن يكون واقفاً في نفس المكان
+  ويظل متصلاً طالما تصل تحديثات جديدة.
+*/
+const LIVE_TIMEOUT_MS = 10000;
+
+function liveBroadcast(data){
+  if(!validPosition(data)) return false;
+
+  const time = new Date(data.timestamp).getTime();
+  if(!Number.isFinite(time)) return false;
+
+  const age = Date.now() - time;
+
+  // سماح بسيط لاختلاف ساعة الجهاز/الخادم إذا كان timestamp مستقبلياً.
+  return age >= -5000 && age <= LIVE_TIMEOUT_MS;
+}
+
+function removeBus1(){
+  if(bus1Marker){
+    map.removeLayer(bus1Marker);
+    bus1Marker = null;
+  }
+}
+
+function removeBus2(){
+  if(bus2Marker){
+    map.removeLayer(bus2Marker);
+    bus2Marker = null;
+  }
+}
+
+function updateBus1(data){
+  if(!liveBroadcast(data)){
+    removeBus1();
+    return;
+  }
+
+  const lat = Number(data.lat);
+  const lng = Number(data.lng);
+
+  if(!bus1Marker){
+    bus1Marker = L.marker(
+      [lat,lng],
+      {
+        icon:bus1Icon,
+        zIndexOffset:1000
+      }
+    )
+    .addTo(map)
+    .bindPopup('<div class="bus-popup">🚌 باص 1</div>');
+  }else{
+    bus1Marker.setLatLng([lat,lng]);
+  }
+}
+
+function updateBus2(data){
+  if(!liveBroadcast(data)){
+    removeBus2();
+    return;
+  }
+
+  const lat = Number(data.lat);
+  const lng = Number(data.lng);
+
+  if(!bus2Marker){
+    bus2Marker = L.marker(
+      [lat,lng],
+      {
+        icon:bus2Icon,
+        zIndexOffset:1000
+      }
+    )
+    .addTo(map)
+    .bindPopup('<div class="bus-popup">🚌 باص 2</div>');
+  }else{
+    bus2Marker.setLatLng([lat,lng]);
+  }
+}
+
+/* قراءة المواقع من Supabase */
+async function loadBuses(){
+
+  try{
+    const response = await fetch(TABLE_URL,{
+      method:"GET",
+      headers:headers,
+      cache:"no-store"
+    });
+
+    if(!response.ok){
+      const errorText = await response.text();
+      throw new Error(
+        "Supabase HTTP " + response.status + " - " + errorText
+      );
+    }
+
+    const rows = await response.json();
+
+    let bus1Data = null;
+    let bus2Data = null;
+
+    rows.forEach(row=>{
+      const name = String(row.bus || "").toLowerCase().trim();
+
+      if(name === "bus1"){
+        bus1Data = row;
+      }
+
+      if(name === "bus2"){
+        bus2Data = row;
+      }
+    });
+
+    updateBus1(bus1Data);
+    updateBus2(bus2Data);
+
+    const bus1Active = liveBroadcast(bus1Data);
+    const bus2Active = liveBroadcast(bus2Data);
+
+    if(bus1Active && bus2Active){
+      document.getElementById("status").textContent =
+        "🟢 الباصان متصلان — الموقع يتحدث تلقائياً";
+    }else if(bus1Active){
+      document.getElementById("status").textContent =
+        "🟢 باص 1 متصل — الموقع يتحدث تلقائياً";
+    }else if(bus2Active){
+      document.getElementById("status").textContent =
+        "🟠 باص 2 متصل — الموقع يتحدث تلقائياً";
+    }else{
+      document.getElementById("status").textContent =
+        "⚪ لا يوجد باصات متصلة — لا يوجد بث حالياً";
+    }
+
+  }catch(error){
+
+    console.error("Supabase error:",error);
+
+    document.getElementById("status").textContent =
+      "⚠️ تعذر الاتصال بقاعدة بيانات الباصات";
+  }
+}
+
+/*
+  تحديث متكرر سريع.
+  - الباص المتصل: آخر timestamp خلال 10 ثوانٍ.
+  - الباص يمكن أن يكون واقفاً؛ لا يشترط تغير lat/lng.
+  - إذا توقف إرسال الموقع (مثلاً بعد إيقاف الرحلة)، وبعد مرور 10 ثوانٍ
+    تقريباً يختفي رمز الباص وتتحول حالته إلى غير متصل.
+*/
+loadBuses();
+setInterval(loadBuses,2000);
+
+/* إصلاح حجم الخريطة بعد تحميل الصفحة وتغيير حجم الشاشة */
+setTimeout(()=>map.invalidateSize(),500);
+
+window.addEventListener("resize",()=>{
+  map.invalidateSize();
+});
+</script>
+
+</body>
+</html>
